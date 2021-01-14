@@ -35,7 +35,7 @@ int main() {
     google::SetStderrLogging(google::INFO);
 
     std::thread runth[1000];
-    for(int i = 0; i<10; ++i)
+    for(int i = 0; i<50; ++i)
     {
         runth[i] = std::thread(createClient,i);
     }

@@ -1,5 +1,6 @@
- #include "taskController.h"
+#include "taskController.h"
 #include <sys/socket.h>
+#include <sys/epoll.h>
 #include <unistd.h>
 #include <mutex>
 #include <cstring>
@@ -17,43 +18,50 @@ void threadSendFun(void* controller)
         return;
     }
     std::unordered_map<int,std::list<taskData*>>* datas = tc->getTaskList();
-    std::list<int>* sockets = tc->getSendSocketList();
-    std::mutex cond_mtx;
-    std::unique_lock<std::mutex> lck(cond_mtx);
+    //std::list<int>* sockets = tc->getSendSocketList();
+    epoll_event events[1024] = {};
+    int epfd = tc->getEpollFD();
+    int listenfd = tc->getSocket();
     while(true)
     {
-        bool hasData = false;
-        taskData* data = NULL;
-        tc_wtmtx.lock();
-        if( datas->size() > 0 && sockets->size() > 0)
+        int ret = epoll_wait(epfd, events, 1024, -1);
+        if(ret < 0)
         {
-            int socket = sockets->front();
-            sockets->pop_front();
-            std::list<taskData*>* datalist = &(*datas)[socket];
-            if(datalist->size() > 0)
-            {
-                data = datalist->front();
-                datalist->pop_front();
-            }
-            tc_wtmtx.unlock();
-            //send the data
-            if(data)
-            {
-                int len = send(socket, data->m_databuf, data->m_len, 0);
-                //SECLOG(secsdk::INFO)<< "send to the client: " << socket << " datalen: " << len << "   data:" << data->m_databuf;
-                delete data;
-                hasData = true;
-            }
+            SECLOG(secsdk::ERROR) << "error while epoll wait with errno: " << errno << "  epfd: " << epfd;
+            break;
         }
-        else
+
+        for(int i = 0; i < ret; ++i)
         {
-            tc_wtmtx.unlock();
-        }
-        if(!hasData)
-        {
-            if(tc->getWTCondition()->wait_for(lck, std::chrono::seconds(THREAD_CHECK_INTERVAL)) == std::cv_status::timeout)
+            if(events[i].data.fd != listenfd )
             {
-                //SECLOG(secsdk::INFO) << "condition wait time out";
+                if(events[i].events & EPOLLOUT)
+                {
+                    int clientSocket = events[i].data.fd;
+                    taskData* data = NULL;
+                    tc_wtmtx.lock();
+                    if( datas->size() > 0 )
+                    {
+                        std::list<taskData*>* datalist = &(*datas)[clientSocket];
+                        if(datalist->size() > 0)
+                        {
+                            data = datalist->front();
+                            datalist->pop_front();
+                        }
+                        tc_wtmtx.unlock();
+                        //send the data
+                        if(data)
+                        {
+                            int len = send(clientSocket, data->m_databuf, data->m_len, MSG_NOSIGNAL);
+                            //SECLOG(secsdk::INFO)<< "send to the client: " << socket << " datalen: " << len << "   data:" << data->m_databuf;
+                            delete data;
+                        }
+                    }
+                    else
+                    {
+                        tc_wtmtx.unlock();
+                    }
+                }
             }
         }
     }
@@ -66,52 +74,46 @@ void threadRecvFun(void* controller)
     {
         return;
     }
-    std::list<int>* sockets = tc->getRecvSocketList();
-    std::mutex cond_mtx;
-    std::unique_lock<std::mutex> lck(cond_mtx);
     char* buf[4096] = {0};
+    epoll_event events[1024] = {};
+    int epfd = tc->getEpollFD();
+    int listenfd = tc->getSocket();
     while(true)
     {
-        bool hasData = false;
-        int socket = -1;
-        tc_rdmtx.lock();
-        if(sockets->size() > 0)
+        int ret = epoll_wait(epfd, events, 1024, -1);
+        if(ret < 0)
         {
-            socket = sockets->front();
-            sockets->pop_front();
-            hasData = true;
+            SECLOG(secsdk::ERROR) << "error while epoll wait with errno: " << errno;
+            break;
         }
-        tc_rdmtx.unlock();
-        //read
-        if(socket != -1)
+
+        for(int i = 0; i < ret; ++i)
         {
-            while( true )
+            if(events[i].data.fd != listenfd )
             {
-                memset(buf, 0, 4096);
-                int revLen = recv(socket, buf, 4096, 0);
-                if(revLen <= 0)
+                if(events[i].events & EPOLLIN)
                 {
-                    //SECLOG(secsdk::ERROR) << " recv data from client with errno: " << errno;
-                    break;
+                    //data comes
+                    int clientSocket = events[i].data.fd;
+                    memset(buf, 0, 4096);
+                    int revLen = recv(clientSocket, buf, 4096, 0);
+                    if(revLen <= 0)
+                    {
+                        //SECLOG(secsdk::ERROR) << " recv data from client with errno: " << errno;
+                        //break;
+                    }
+                    else
+                    {
+                        //SECLOG(secsdk::INFO) << "recv data: " << (char*)buf  << "   len:" << revLen;
+                        tc->makeNewTask(clientSocket, (char*)buf, revLen);
+                    }
                 }
-                else
-                {
-                    //SECLOG(secsdk::INFO) << "recv data: " << (char*)buf  << "   len:" << revLen;
-                    tc->makeNewTask(socket, (char*)buf, revLen);
-                }
-            }
-        }
-        if(!hasData)
-        {
-            if(tc->getRDCondition()->wait_for(lck, std::chrono::seconds(THREAD_CHECK_INTERVAL)) == std::cv_status::timeout)
-            {
-                //SECLOG(secsdk::INFO) << "condition wait time out";
             }
         }
     }
 }
 
-taskController::taskController()
+taskController::taskController(int epollfd, int socket):m_epollfd(epollfd), m_socket(socket)
 {
     threadPool::getInstance()->initTaskPool(8,8);
     m_sendThread = std::make_shared<std::thread>(threadSendFun,(void*)this);
@@ -134,13 +136,13 @@ taskController::~taskController()
 
 void taskController::onTaskProcessor(void* param)
 {
-    SECLOG(secsdk::INFO) << "called";
+    //SECLOG(secsdk::INFO) << "called";
     taskData* data = (taskData*)param;
-    usleep(800000);
+    usleep(80000);
     tc_wtmtx.lock();
     m_taskDatas[data->m_clientId].push_back(data);
     tc_wtmtx.unlock();
-    SECLOG(secsdk::INFO) << "will leave";
+    //SECLOG(secsdk::INFO) << "will leave";
 }
 
 void taskController::makeNewTask(int clientID, char* buf, unsigned int len)

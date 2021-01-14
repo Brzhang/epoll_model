@@ -26,7 +26,6 @@ int main()
 //    google::InitGoogleLogging(name);
     google::SetStderrLogging(google::INFO);
 
-    WG::taskController tc;
     SECLOG(secsdk::INFO) << "This is server";
     // socket
     int listenfd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -51,7 +50,7 @@ int main()
         SECLOG(secsdk::ERROR) << "Error: listen";
         return -1;
     }
-    
+
     int epfd = epoll_create(1024);//2.6.8 later,  the size is uselsss, and managed by the system
     if(epfd == -1)
     {
@@ -66,6 +65,8 @@ int main()
         SECLOG(secsdk::ERROR) << "epoll socket failed";
         return -1;
     }
+    WG::taskController tc(epfd, listenfd);
+
     epoll_event events[1024] = {};
     char buf[4096] = {0};
     size_t revLen = 0;
@@ -120,14 +121,14 @@ int main()
                     epoll_ctl(epfd, EPOLL_CTL_DEL, clientSocket, NULL);
                     continue;
                 }
-                if(events[i].events & EPOLLIN)
+                /*if(events[i].events & EPOLLIN)
                 {
                     //data comes
                     int clientSocket = events[i].data.fd;
                     //SECLOG(secsdk::INFO) << "get epoll in form the socketfd: " << clientSocket;
                     tc.getRecvSocketList()->push_back(clientSocket);
                     tc.getRDCondition()->notify_all();
-                    /*memset(buf, 0, 4096);
+                    memset(buf, 0, 4096);
                     revLen = recv(clientsocket, buf, 4096, 0);
                     if(revLen <= 0)
                     {
@@ -137,7 +138,7 @@ int main()
                     {
                         buf[revLen] = '\0';
                         //std::cout << "....recv data: " << buf  << "   len:" << revLen << std::endl;
-                        }*/
+                        }
                 }
                 if(events[i].events & EPOLLOUT)
                 {
@@ -145,9 +146,9 @@ int main()
                     //SECLOG(secsdk::INFO) << "get the out epoll: " << clientSocket;
                     tc.getSendSocketList()->push_back(clientSocket);
                     tc.getWTCondition()->notify_all();
-                    /*int len = send(clientsocket, buf, revLen, 0);
-                      std::cout << "send to the client: " << len << std::endl;*/
-                }
+                    int len = send(clientsocket, buf, revLen, 0);
+                      std::cout << "send to the client: " << len << std::endl;
+                      }*/
             }
         }
     }

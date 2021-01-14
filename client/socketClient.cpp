@@ -59,7 +59,7 @@ int socketClient::doConnect(const std::string& req, std::string& resp)
     std::string request(req);
     request =  request;// + std::to_string(cmdid);
 
-    if(0 >= send(client, (void*)request.c_str(), request.size(), 0))
+    if(0 >= send(client, (void*)request.c_str(), request.size(), MSG_NOSIGNAL))
     {
         std::cout << "send msg error with errno: " << errno << std::endl;
         close(client);
@@ -69,12 +69,12 @@ int socketClient::doConnect(const std::string& req, std::string& resp)
     while(true)
     {
         int len = recv(client, buf, SOCKETBUFFER_SIZE, 0);
-        if(len <=0 && resp.size() > 0)
+        if(len <=0 && resp.size() == request.size())
         {
             close(client);
             SECLOG(secsdk::INFO) << "client closed";
             break;
-        }
+            }
         if(len <= 0)
         {
             //SECLOG(secsdk::INFO) << "client recv errno: " << errno << "   errno:" << EWOULDBLOCK<<" "<<EAGAIN ;

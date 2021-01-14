@@ -36,8 +36,8 @@ void threadfun(void* param, std::atomic<short>* state)
         if(pool->m_tasks.size() > 0)
         {
             task = pool->m_tasks.front();
-            SECLOG(secsdk::INFO) << "m_tasks.size() before pop " << pool->m_tasks.size() << "    task:"<<task;
-            SECLOG(secsdk::INFO) << "task->m_worker: "<< &(task->m_worker) << "    task->param: "<< &(task->m_param);
+            SECLOG(secsdk::INFO) << "m_tasks.size() before pop " << pool->m_tasks.size();
+            //SECLOG(secsdk::INFO) << "task->m_worker: "<< &(task->m_worker) << "    task->param: "<< &(task->m_param);
             pool->m_tasks.pop();
             mtx.unlock();
             ifreeTime = 0;
