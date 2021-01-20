@@ -10,12 +10,14 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <thread>
 
 #include "socketClient.h"
 #include "../server/seclog.h"
 
 const int SOCKETBUFFER_SIZE = 4096;
-#define CLIENT_SOCKET "/tmp/socket_wg_tde_server"
+#define SERVER_SOCKET "/tmp/socket_wg_tde_server"
+#define OWEN_SOCKET "/tmp/socket_wg_tde_client_"
 
 using namespace WG;
 
@@ -29,27 +31,47 @@ int socketClient::doConnect(const std::string& req, std::string& resp)
        // socket
     int client = socket(AF_UNIX, SOCK_STREAM, 0);
     if (client == -1) {
-        std::cout << "Error: socket" << std::endl;
+        SECLOG(secsdk::ERROR) << "Error: socket";
         return -1;
     }
+
+
+	/* fill socket address structure with our address */
+	struct sockaddr_un owenAddr;
+	memset(&owenAddr, 0, sizeof(sockaddr_un));
+	owenAddr.sun_family = AF_UNIX;
+	sprintf(owenAddr.sun_path, "%s%05d", OWEN_SOCKET, std::this_thread::get_id());
+	size_t size = offsetof(struct sockaddr_un, sun_path) + strlen(owenAddr.sun_path);
+	unlink(owenAddr.sun_path);        /* in case it already exists */
+	if (bind(client, (struct sockaddr *)&owenAddr, size) < 0) {
+		SECLOG(secsdk::ERROR) << "Error: bind failed with errno: " << errno;
+		return -1;
+	}
+
     // connect
     struct sockaddr_un serverAddr;
+	memset(&serverAddr, 0, sizeof(sockaddr_un));
     serverAddr.sun_family = AF_UNIX;
-    strcpy(serverAddr.sun_path,CLIENT_SOCKET);
+    strcpy(serverAddr.sun_path, SERVER_SOCKET);
     //serverAddr.sun_path[0] = 0;
-    size_t size = offsetof(struct sockaddr_un, sun_path) + strlen(serverAddr.sun_path);
-    /*if(bind(client, (struct sockaddr*)&serverAddr, size)==-1){
-        std::cout << "bind failed" << std::endl;
-        return -1;
-        }*/
+	size = offsetof(struct sockaddr_un, sun_path) + strlen(serverAddr.sun_path);
+    
     if (connect(client, (struct sockaddr*)&serverAddr,size) < 0) {
-        std::cout << "Error: connect with errno: " << errno << std::endl;
+        SECLOG(secsdk::ERROR) << "Error: connect with errno: " << errno;
         return -1;
+    }
+    else
+    {
+        SECLOG(secsdk::INFO) << "socket connect: " << client;
     }
 
     //set non-blocking
     int flags = fcntl(client, F_GETFL, 0);
     int ret = fcntl(client, F_SETFL, flags|O_NONBLOCK);
+	if (ret == -1)
+	{
+		SECLOG(secsdk::ERROR) << " set unblocking mode failed";
+	}
 
     //std::cout << "...connect" << std::endl;
     char buf[SOCKETBUFFER_SIZE] = {0};
@@ -61,20 +83,19 @@ int socketClient::doConnect(const std::string& req, std::string& resp)
 
     if(0 >= send(client, (void*)request.c_str(), request.size(), MSG_NOSIGNAL))
     {
-        std::cout << "send msg error with errno: " << errno << std::endl;
+        SECLOG(secsdk::ERROR) << "send msg error with errno: " << errno;
         close(client);
         return -1;
     }
-    //std::cout << "send to the server success: " << request << std::endl;
+    SECLOG(secsdk::INFO) << "send to the server success: " << client;
+	resp.clear();
     while(true)
     {
         int len = recv(client, buf, SOCKETBUFFER_SIZE, 0);
         if(len <=0 && resp.size() == request.size())
         {
-            close(client);
-            SECLOG(secsdk::INFO) << "client closed";
             break;
-            }
+        }
         if(len <= 0)
         {
             //SECLOG(secsdk::INFO) << "client recv errno: " << errno << "   errno:" << EWOULDBLOCK<<" "<<EAGAIN ;
@@ -85,7 +106,6 @@ int socketClient::doConnect(const std::string& req, std::string& resp)
             }
             else
             {
-                close(client);
                 break;
             }
         }
@@ -93,7 +113,7 @@ int socketClient::doConnect(const std::string& req, std::string& resp)
         //SECLOG(secsdk::INFO) << "get resp:" << resp;
         //std::cout << "recv from server: len: " << len << std::endl;
     }
-    //SECLOG(secsdk::INFO) << "close, resp:" << resp;
+    SECLOG(secsdk::INFO) << "closed socket: " << client;
     close(client);
     return 0;
 }

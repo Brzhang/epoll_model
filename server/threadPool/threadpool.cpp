@@ -12,7 +12,7 @@ threadPool* threadPool::m_instance = NULL;
 
 const unsigned int THREAD_CHECK_INTERVAL = 10; //10s
 const unsigned int THREAD_IDLE_TIME = 30;//30s
-unsigned int max_checkTimes = THREAD_IDLE_TIME/THREAD_CHECK_INTERVAL;
+unsigned int max_checkTimes = THREAD_IDLE_TIME/THREAD_CHECK_INTERVAL+1;
 
 void threadfun(void* param, std::atomic<short>* state)
 {
@@ -24,10 +24,13 @@ void threadfun(void* param, std::atomic<short>* state)
         SECLOG(secsdk::ERROR) << "pool object is NULL";
         return;
     }
+    mtx.lock();
+    pool->m_validThreadNums++;
+    mtx.unlock();
     unsigned short ifreeTime = 0;
     std::mutex cond_mtx;
     std::unique_lock<std::mutex> lck(cond_mtx);
-    while(pool->m_tpState)// && ifreeTime < max_checkTimes)
+    while(pool->m_tpState)
     {
         //check task
         //SECLOG(secsdk::INFO) << "into loop";
@@ -63,15 +66,21 @@ void threadfun(void* param, std::atomic<short>* state)
         {
             continue;
         }
+        else if(ifreeTime >= max_checkTimes && pool->needReleaseTaskThread())
+        {
+            SECLOG(secsdk::INFO) << "max_checkTimes:  " << max_checkTimes << "    ifreeTime: " << ifreeTime;
+            break;
+        }
         if(cond.wait_for(lck, std::chrono::seconds(THREAD_CHECK_INTERVAL)) == std::cv_status::timeout)
         {
             //SECLOG(secsdk::INFO) << "condition wait time out";
         }
     }
-    if(ifreeTime >= max_checkTimes)
-    {
-        pool->releaseTaskThread(std::this_thread::get_id());
-    }
+    *state = 3;
+    mtx.lock();
+    pool->m_validThreadNums--;
+    mtx.unlock();
+
     SECLOG(secsdk::INFO) << "will leave thread function";
 }
 
@@ -100,6 +109,7 @@ void threadPool::delInstance()
 int threadPool::initTaskPool(int maxNum, int minNum)
 {
     mtx.lock();
+    m_validThreadNums = 0;
     m_maxNum = maxNum;
     m_minNum = minNum;
     m_tpState = true;
@@ -108,7 +118,7 @@ int threadPool::initTaskPool(int maxNum, int minNum)
     {
         for(int i = 0; i < tsize; ++i)
         {
-            createNewThread();
+            createNewThread(NULL);
         }
     }
     mtx.unlock();
@@ -120,22 +130,23 @@ int threadPool::addTask(std::shared_ptr<threadTask> task)
     mtx.lock();
     //SECLOG(secsdk::INFO) << "task added";
     m_tasks.push(task);
-    if(m_threads.size() < m_maxNum)
+    if(m_validThreadNums < m_maxNum)
     {
-        bool isPoolBusy = true;
-        for(wgThread* th : m_threads)
+        int idleThread = 0;
+        std::shared_ptr<wgThread> invalidThread = NULL;
+        for(std::shared_ptr<wgThread> th : m_threads)
         {
             if(th->m_state == 1)
             {
-                isPoolBusy = false;
                 SECLOG(secsdk::INFO) << "find idle thread, will not create new thread";
+                ++idleThread;
                 break;
             }
         }
-        if(isPoolBusy)
+        if(idleThread == 0)
         {
             SECLOG(secsdk::INFO) << "will create new thread";
-            createNewThread();
+            createNewThread(invalidThread);
         }
     }
     mtx.unlock();
@@ -143,31 +154,17 @@ int threadPool::addTask(std::shared_ptr<threadTask> task)
     return 0;
 }
 
-int threadPool::releaseTaskThread(std::thread::id threadid)
+bool threadPool::needReleaseTaskThread()
 {
+    bool isNeed = false;
     mtx.lock();
-    if(m_threads.size() <= m_minNum)
+    SECLOG(secsdk::INFO) << "validThread: " << m_validThreadNums << "  ,   m_minNum: " << m_minNum;
+    if(m_validThreadNums > m_minNum)
     {
-        mtx.unlock();
-        return 1;
-    }
-    SECLOG(secsdk::INFO) << "we have idle thread will be destoried";
-    std::list<wgThread*>::iterator iter = m_threads.begin();
-    while(iter != m_threads.end())
-    {
-        wgThread* th = (*iter);
-        SECLOG(secsdk::INFO) << "iter is " << th << " iter->m_pthread: " << th->m_pthread;
-        if(th->m_pthread->get_id() == threadid)
-        {
-            SECLOG(secsdk::INFO)<< "find the thread id";
-            m_threads.erase(iter);
-            delete th;
-            break;
-        }
-        ++iter;
+        isNeed = true;
     }
     mtx.unlock();
-    return 0;
+    return isNeed;
 }
 
 int threadPool::releaseTaskPool()
@@ -184,24 +181,31 @@ int threadPool::releaseTaskPool()
         return 0;
     }
     m_tpState = false;
-    for(wgThread* th : m_threads)
-    {
-        if( th->m_pthread->joinable())
-        {
-            th->m_pthread->join();
-        }
-        delete th;
-        th == NULL;
-    }
     m_threads.clear();
     mtx.unlock();
     return 2;
 }
 
-int threadPool::createNewThread()
+int threadPool::createNewThread(std::shared_ptr<wgThread> worker)
 {
     SECLOG(secsdk::INFO) << "will create new thread";
-    wgThread* worker = new wgThread();
+    bool isNewThread = false;
+    if(worker == NULL)
+    {
+        worker = std::make_shared<wgThread>();
+        isNewThread = true;
+    }
+    else
+    {
+        if(worker->m_pthread->joinable())
+        {
+            worker->m_pthread->join();
+        }
+        else
+        {
+            worker->m_pthread->detach();
+        }
+    }
     if(worker)
     {
         worker->m_state = 0;
@@ -214,7 +218,10 @@ int threadPool::createNewThread()
                 usleep(100000);
             }
             SECLOG(secsdk::INFO) << "new thread create successfull";
-            m_threads.push_back(worker);
+            if(isNewThread)
+            {
+                m_threads.push_back(worker);
+            }
             return 0;
         }
     }

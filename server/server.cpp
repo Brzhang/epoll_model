@@ -23,7 +23,7 @@
 int main()
 {
     const char* name = "Server";
-//    google::InitGoogleLogging(name);
+    google::InitGoogleLogging(name);
     google::SetStderrLogging(google::INFO);
 
     SECLOG(secsdk::INFO) << "This is server";
@@ -66,7 +66,7 @@ int main()
         return -1;
     }
     WG::taskController tc(epfd, listenfd);
-
+	std::unordered_map<int, std::list<WG::taskData*>>* datas = tc.getTaskList();
     epoll_event events[1024] = {};
     char buf[4096] = {0};
     size_t revLen = 0;
@@ -115,7 +115,11 @@ int main()
                 if((events[i].events & EPOLLERR) || (events[i].events & EPOLLHUP))
                 {
                     int clientSocket = events[i].data.fd;
-                    SECLOG(secsdk::INFO) << "client will close with err. client: " << clientSocket;
+					if (datas)
+					{
+						datas->erase(clientSocket);
+					}
+					SECLOG(secsdk::INFO) << "client will close with err. client: " << clientSocket;
                     //remove from clntConn list
                     close(clientSocket);
                     epoll_ctl(epfd, EPOLL_CTL_DEL, clientSocket, NULL);
