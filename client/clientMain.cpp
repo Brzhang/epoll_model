@@ -26,12 +26,12 @@ void createClient(int index)
     }
     //SECLOG(secsdk::INFO) << "Send:"<< req;
 	i = 0;
-    while(i<1000)
+    //while(i<1000)
     {
-		SECLOG(secsdk::INFO) << "=============================================================i::::" << i << "start";
+		SECLOG(secsdk::INFO) << "=============================================================i::::" << index << "start";
         so.doConnect(req, response);
         //SECLOG(secsdk::INFO) << "Recv" << response;
-		SECLOG(secsdk::INFO) << "=============================================================i::::" << i << "end";
+		SECLOG(secsdk::INFO) << "=============================================================i::::" << index << "end";
         sleep(1);
 		++i;
     }
@@ -43,13 +43,13 @@ int main() {
     google::SetStderrLogging(google::INFO);
 
     std::thread runth[100];
-    for(int i = 0; i<100; ++i)
+    for(int i = 0; i<10; ++i)
    	{
         runth[i] = std::thread(createClient,i);
         //runth[i].detach();
 	}
 
-    for(int i=0; i<100; ++i)
+    for(int i=0; i<10; ++i)
     {
         runth[i].join();
     }

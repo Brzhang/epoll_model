@@ -66,12 +66,12 @@ int socketClient::doConnect(const std::string& req, std::string& resp)
     }
 
     //set non-blocking
-    int flags = fcntl(client, F_GETFL, 0);
+    /*int flags = fcntl(client, F_GETFL, 0);
     int ret = fcntl(client, F_SETFL, flags|O_NONBLOCK);
 	if (ret == -1)
 	{
 		SECLOG(secsdk::ERROR) << " set unblocking mode failed";
-	}
+	}*/
 
     //std::cout << "...connect" << std::endl;
     char buf[SOCKETBUFFER_SIZE] = {0};
@@ -80,39 +80,48 @@ int socketClient::doConnect(const std::string& req, std::string& resp)
 
     std::string request(req);
     request =  request;// + std::to_string(cmdid);
-
-    if(0 >= send(client, (void*)request.c_str(), request.size(), MSG_NOSIGNAL))
-    {
-        SECLOG(secsdk::ERROR) << "send msg error with errno: " << errno;
-        close(client);
-        return -1;
-    }
-    SECLOG(secsdk::INFO) << "send to the server success: " << client;
-	resp.clear();
-    while(true)
-    {
-        int len = recv(client, buf, SOCKETBUFFER_SIZE, 0);
-        if(len <=0 && resp.size() == request.size())
-        {
-            break;
-        }
-        if(len <= 0)
-        {
-            //SECLOG(secsdk::INFO) << "client recv errno: " << errno << "   errno:" << EWOULDBLOCK<<" "<<EAGAIN ;
-            if (EWOULDBLOCK == errno || EAGAIN == errno)
-            {
-                usleep(50000);
-                continue;
-            }
-            else
-            {
-                break;
-            }
-        }
-        resp.append(buf, len);
-        //SECLOG(secsdk::INFO) << "get resp:" << resp;
-        //std::cout << "recv from server: len: " << len << std::endl;
-    }
+	int sendTimes = 1;
+	int totolNums = 100 * 1024 * 1024/req.size()+1;
+	while (sendTimes < totolNums)
+	{
+		if (0 >= send(client, (void*)request.c_str(), request.size(), MSG_NOSIGNAL))
+		{
+			SECLOG(secsdk::ERROR) << "send msg error with errno: " << errno;
+			close(client);
+			return -1;
+		}
+		SECLOG(secsdk::INFO) << "send to the server success: " << client;
+		resp.clear();
+		while (true)
+		{
+			int len = recv(client, buf, SOCKETBUFFER_SIZE, 0);
+			if (len <= 0)
+			{
+				break;
+			}
+			/*if(len <= 0)
+			{
+				//SECLOG(secsdk::INFO) << "client recv errno: " << errno << "   errno:" << EWOULDBLOCK<<" "<<EAGAIN ;
+				if (EWOULDBLOCK == errno || EAGAIN == errno)
+				{
+					usleep(50000);
+					continue;
+				}
+				else
+				{
+					break;
+				}
+			}*/
+			resp.append(buf, len);
+			if (resp.size() == request.size())
+			{
+				break;
+			}
+			//SECLOG(secsdk::INFO) << "get resp:" << resp;
+			//std::cout << "recv from server: len: " << len << std::endl;
+		}
+		++sendTimes;
+	}
     SECLOG(secsdk::INFO) << "closed socket: " << client;
     close(client);
     return 0;
