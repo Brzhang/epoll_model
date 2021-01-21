@@ -57,13 +57,13 @@ void threadSendFun(void* controller)
                             //SECLOG(secsdk::INFO)<< "send to the client: " << socket << " datalen: " << len << "   data:" << data->m_databuf;
                             delete data;
                         }
-						tc_wtmtx.lock();
+						/*tc_wtmtx.lock();
 						if (datalist->size() == 0)
 						{
 							datas->erase(clientSocket);
 							SECLOG(secsdk::INFO) << "send erase clientsocket " << clientSocket;
 						}
-						tc_wtmtx.unlock();
+						tc_wtmtx.unlock();*/
                     }
                     else
                     {
