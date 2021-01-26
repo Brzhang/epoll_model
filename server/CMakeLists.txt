@@ -24,7 +24,7 @@ set_target_properties(libglog PROPERTIES IMPORTED_LOCATION
 
 include_directories(${PROJECT_SOURCE_DIR}/lib/glog/include)
 
-aux_source_directory(${CMAKE_SOURCE_DIR}/threadpool  TPOOL)
+aux_source_directory(${CMAKE_SOURCE_DIR}/threadPool  TPOOL)
 aux_source_directory(${CMAKE_SOURCE_DIR}/   SOURCE)
 
 add_executable(${PROJECT_NAME} ${SOURCE} ${TPOOL})
