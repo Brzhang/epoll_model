@@ -3,9 +3,9 @@
 #include "threadpool.h"
 #include <unordered_map>
 #include "socketBase.h"
+
 namespace WG
 {
-	class socketBase;
 	class taskData
 	{
 	public:

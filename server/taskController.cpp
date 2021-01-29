@@ -46,7 +46,8 @@ void taskController::onTaskProcessor(void* param)
 	{
 		case EAC_API1:
 		{
-			//call api1 method
+			//call api1 method, here we usleep(50000) as the method costs.
+			usleep(50000);
 			char apiReturnData[1024] = { 0 };
 			memset(apiReturnData, 'A', 1024);
 			if (0 != protocol::getInstance()->makeAPIResponse(msgId, EAC_API1, apiReturnData, 1024, resp))
@@ -58,7 +59,8 @@ void taskController::onTaskProcessor(void* param)
 		}
 		case EAC_API2:
 		{
-			//call api1 method
+			//call api2 method, here we usleep(20000) as the method costs.
+			usleep(50000);
 			char apiReturnData[1024] = { 0 };
 			memset(apiReturnData, 'B', 1024);
 			if (0 != protocol::getInstance()->makeAPIResponse(msgId, EAC_API2, apiReturnData, 1024, resp))
@@ -73,12 +75,14 @@ void taskController::onTaskProcessor(void* param)
 	}
 	if (m_socket)
 	{
-		unsigned char outdata[1024] = { 0 };
-		CharToHex(outdata, (unsigned char*)resp.c_str(), resp.size());
-		SECLOG(secsdk::INFO) << " data will send : " << outdata;
+		unsigned char* logData = new unsigned char[2*resp.size()+1];
+		memset(logData, 0, 2*resp.size()+1);
+		CharToHex(logData, (unsigned char*)resp.data(), resp.size());
+		SECLOG(secsdk::INFO) << " data will send : " << logData;
+		delete logData;
+
 		m_socket->send(data->m_clientId, (void*)resp.data(), resp.size());
 	}
-    SECLOG(secsdk::INFO) << "will leave";
 }
 
 void taskController::onRecv(int socket, void * data, unsigned int len)
