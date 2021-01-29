@@ -51,13 +51,13 @@ int main()
     google::SetStderrLogging(google::INFO);
 
     std::thread runth[100];
-    for(int i = 0; i<1; ++i)
+    for(int i = 0; i<50; ++i)
    	{
         runth[i] = std::thread(createClient,i);
         //runth[i].detach();
 	}
 
-    for(int i=0; i<1; ++i)
+    for(int i=0; i<50; ++i)
     {
         runth[i].join();
     }
