@@ -2,7 +2,8 @@
 #include <mutex>
 #include <condition_variable>
 #include <unistd.h>
-#include "../seclog.h"
+
+#include "seclog.h"
 
 using namespace WG;
 
@@ -158,7 +159,7 @@ bool threadPool::needReleaseTaskThread()
 {
     bool isNeed = false;
     mtx.lock();
-    SECLOG(secsdk::INFO) << "validThread: " << m_validThreadNums << "  ,   m_minNum: " << m_minNum;
+    //SECLOG(secsdk::INFO) << "validThread: " << m_validThreadNums << "  ,   m_minNum: " << m_minNum;
     if(m_validThreadNums > m_minNum)
     {
         isNeed = true;

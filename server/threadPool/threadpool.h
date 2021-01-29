@@ -28,11 +28,16 @@ namespace WG
     {
     public:
         wgThread():m_pthread(NULL),m_state(false){};
-        virtual ~wgThread(){
+        virtual ~wgThread()
+		{
             if(m_pthread->joinable())
-            {m_pthread->join();}
+            {
+				m_pthread->join();
+			}
             else
-            {m_pthread->detach();}
+            {
+				m_pthread->detach();
+			}
         };
         std::shared_ptr<std::thread> m_pthread;
         std::atomic<short> m_state;//0-will create, 1-idle/ready, 2-busy, 3-released

@@ -9,11 +9,13 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <fcntl.h>
+//#include <fcntl.h>
 #include <thread>
 
 #include "socketClient.h"
-#include "../server/seclog.h"
+
+#include "seclog.h"
+#include "hexChar.h"
 
 const int SOCKETBUFFER_SIZE = 4096;
 #define SERVER_SOCKET "/tmp/socket_wg_tde_server"
@@ -35,12 +37,11 @@ int socketClient::doConnect(const std::string& req, std::string& resp)
         return -1;
     }
 
-
 	/* fill socket address structure with our address */
 	struct sockaddr_un owenAddr;
 	memset(&owenAddr, 0, sizeof(sockaddr_un));
 	owenAddr.sun_family = AF_UNIX;
-	sprintf(owenAddr.sun_path, "%s%05d", OWEN_SOCKET, std::this_thread::get_id());
+	sprintf(owenAddr.sun_path, "%s%u", OWEN_SOCKET, std::this_thread::get_id());
 	size_t size = offsetof(struct sockaddr_un, sun_path) + strlen(owenAddr.sun_path);
 	unlink(owenAddr.sun_path);        /* in case it already exists */
 	if (bind(client, (struct sockaddr *)&owenAddr, size) < 0) {
@@ -74,54 +75,51 @@ int socketClient::doConnect(const std::string& req, std::string& resp)
 	}*/
 
     //std::cout << "...connect" << std::endl;
-    char buf[SOCKETBUFFER_SIZE] = {0};
-    static int cmdid = 1;
-    ++cmdid;
 
-    std::string request(req);
-    request =  request;// + std::to_string(cmdid);
-	int sendTimes = 1;
-	int totolNums = 100 * 1024 * 1024/req.size()+1;
-	while (sendTimes < totolNums)
+	unsigned char outdata[1024*1024*4] = { 0 };
+	CharToHex(outdata, (unsigned char*)req.c_str(), req.size());
+	SECLOG(secsdk::INFO) << " data will send: " << outdata;
+
+    char buf[SOCKETBUFFER_SIZE] = {0};
+    if (0 >= send(client, (void*)req.c_str(), req.size(), MSG_NOSIGNAL))
 	{
-		if (0 >= send(client, (void*)request.c_str(), request.size(), MSG_NOSIGNAL))
-		{
-			SECLOG(secsdk::ERROR) << "send msg error with errno: " << errno;
-			close(client);
-			return -1;
-		}
-		SECLOG(secsdk::INFO) << "send to the server success: " << client;
-		resp.clear();
-		while (true)
-		{
-			int len = recv(client, buf, SOCKETBUFFER_SIZE, 0);
-			if (len <= 0)
-			{
-				break;
-			}
-			/*if(len <= 0)
-			{
-				//SECLOG(secsdk::INFO) << "client recv errno: " << errno << "   errno:" << EWOULDBLOCK<<" "<<EAGAIN ;
-				if (EWOULDBLOCK == errno || EAGAIN == errno)
-				{
-					usleep(50000);
-					continue;
-				}
-				else
-				{
-					break;
-				}
-			}*/
-			resp.append(buf, len);
-			if (resp.size() == request.size())
-			{
-				break;
-			}
-			//SECLOG(secsdk::INFO) << "get resp:" << resp;
-			//std::cout << "recv from server: len: " << len << std::endl;
-		}
-		++sendTimes;
+		SECLOG(secsdk::ERROR) << "send msg error with errno: " << errno;
+		close(client);
+		return -1;
 	}
+	SECLOG(secsdk::INFO) << "send to the server success: " << client;
+	resp.clear();
+	unsigned int ackLen = 0;
+	while (true)
+	{
+		memset(buf, 0, SOCKETBUFFER_SIZE);
+		int len = recv(client, buf, SOCKETBUFFER_SIZE, 0);
+		if (len == 0)
+		{
+			SECLOG(secsdk::ERROR) << "disconnection";
+			break;
+		}
+		if (ackLen == 0)
+		{
+			memcpy((void*)&ackLen, buf, sizeof(unsigned int));
+			resp.clear();
+		}
+		
+		if (resp.size() + len < ackLen)
+		{
+			resp.append(buf, len);
+		}
+		else
+		{
+			int remainSize = ackLen - resp.size();
+			resp.append(buf, remainSize);
+			ackLen = 0;
+			break;
+		}
+		//SECLOG(secsdk::INFO) << "get resp:" << resp;
+		//std::cout << "recv from server: len: " << len << std::endl;
+	}
+		
     SECLOG(secsdk::INFO) << "closed socket: " << client;
     close(client);
     return 0;

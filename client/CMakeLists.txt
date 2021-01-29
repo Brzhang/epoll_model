@@ -20,12 +20,15 @@ set (EXECUTABLE_OUTPUT_PATH ./release)
 
 add_library(libglog STATIC IMPORTED)
 set_target_properties(libglog PROPERTIES IMPORTED_LOCATION
-  ${CMAKE_SOURCE_DIR}/../server/lib/glog/lib/libglog.a)
+  ${CMAKE_SOURCE_DIR}/../utility/lib/glog/lib/libglog.a)
 
-include_directories(${PROJECT_SOURCE_DIR}/../server/lib/glog/include)
+include_directories(${PROJECT_SOURCE_DIR}/../utility/lib/glog/include)
+include_directories(${PROJECT_SOURCE_DIR}/../protocol)
+include_directories(${PROJECT_SOURCE_DIR}/../utility)
 
-#aux_source_directory(${CMAKE_SOURCE_DIR}/threadpool  TPOOL)
 aux_source_directory(${CMAKE_SOURCE_DIR}/   SOURCE)
+aux_source_directory(${CMAKE_SOURCE_DIR}/../protocol  PROTOCOL)
+aux_source_directory(${CMAKE_SOURCE_DIR}/../utility  UTIL)
 
-add_executable(${PROJECT_NAME} ${SOURCE})
+add_executable(${PROJECT_NAME} ${SOURCE} ${PROTOCOL} ${UTIL})
 target_link_libraries( ${PROJECT_NAME} libglog -ldl -lz -lpthread)
